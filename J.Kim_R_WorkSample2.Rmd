@@ -1,0 +1,860 @@
+---
+title: 'WORK SAMPLE FOR DATA SCIENCE 2'
+subtitle: 'HEDONIC HOME PRICE PREDICTION IN SAN FRANCISCO'
+author: "Jeong Hoon Kim, Allison Carr"
+date: "October 29th, 2019"
+output:
+  html_document:
+    code_folding: hide
+    toc: yes
+    toc_float:
+      collapsed: no
+      include: no
+      smooth_scroll: yes
+  pdf_document:
+    toc: yes
+---
+
+```{r setup, message=FALSE, warning=FALSE, include=FALSE, echo=TRUE, cache=TRUE}
+
+library(ggmap)
+library(censusapi)
+library(corrplot)
+library(stargazer)
+library(tidyverse)
+library(tidycensus)
+library(ggplot2)
+library(sf)
+library(tigris)
+library(rgdal)
+library(lwgeom)
+library(knitr)
+library(dplyr)
+library(pander)
+library(maptools)
+library(sjPlot)
+library(sjmisc)
+library(sjlabelled)
+library(viridis)
+library(tidyverse)
+library(FNN)
+library(IDPmisc)
+library(snakecase)
+library(car)
+library(caret) 
+library(ggpubr)
+library(GGally)
+library(psych)
+library(rgdal)
+library(sp)
+library(tidycensus)
+library(data.table)
+library(gridExtra)
+library(sp)
+library(RColorBrewer)
+library(tmap)
+library(rmarkdown)
+library(quantmod)
+library(spdep)
+require(corrplot)
+require(grDevices)
+library(knitr)
+library(kableExtra)
+library(xtable)
+library(stargazer)
+library(ISLR)
+library(wesanderson)
+library(leaps)
+library(Ecdat)
+library(car)
+library(lmtest)
+options(knitr.table.format = "html")
+
+
+mapTheme <- function(base_size = 12) {
+  theme(
+    text = element_text( color = "black"),
+    plot.title = element_text(size = 15,colour = "black"),
+    plot.subtitle=element_text(face="italic"),
+    plot.caption=element_text(hjust=0),
+    axis.ticks = element_blank(),
+    panel.background = element_blank(),axis.title = element_blank(),
+    axis.text = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_rect(colour = "black", fill=NA, size=2)
+  )
+}
+
+myTheme <- theme(
+  plot.title =element_text(hjust = 0.5,size=12),
+  plot.subtitle = element_text(size=8),
+  plot.caption = element_text(size = 6),
+  axis.text.x = element_text(size = 10, angle = 45, hjust = 1),
+  axis.text.y = element_text(size = 10),
+  axis.title.y = element_text(size = 10),
+  panel.background=element_blank(),
+  plot.background=element_blank(),
+  panel.grid.major=element_line(colour="#D0D0D0",size=.75),
+  axis.ticks=element_blank())
+
+plotTheme <- function(base_size = 12) {
+  theme(
+    text = element_text( color = "black"),
+    plot.title = element_text(size = 14,colour = "black"),
+    plot.subtitle = element_text(face="italic"),
+    plot.caption = element_text(hjust=0),
+    axis.ticks = element_blank(),
+    panel.background = element_blank(),
+    panel.grid.major = element_line("grey80", size = 0.1),
+    panel.grid.minor = element_blank(),
+    panel.border = element_rect(colour = "black", fill=NA, size=2),
+    strip.background = element_rect(fill = "grey80", color = "white"),
+    strip.text = element_text(size=12),
+    axis.title = element_text(size=12),
+    axis.text = element_text(size=10),
+    plot.background = element_blank(),
+    legend.background = element_blank(),
+    legend.title = element_text(colour = "black", face = "italic"),
+    legend.text = element_text(colour = "black", face = "italic"),
+    strip.text.x = element_text(size = 14)
+  )
+}
+
+palette1 <- c("#FA7800","#C48C04","#8FA108","#5AB60C","#25CB10")
+palette2 <- c("#25CB10", "#5AB60C", "#8FA108", "#C48C04", "#FA7800")
+pal <- wes_palette("Zissou1", 5, type = "continuous")
+
+getmode <- function(v) {
+  uniqv <- unique(v)
+  uniqv[which.max(tabulate(match(v, uniqv)))]
+}
+
+```
+
+```{r echo=FALSE}
+qBr <- function(df, variable, rnd) {
+  if (missing(rnd)) {
+    as.character(quantile(round(df[[variable]],0),
+                          c(.01,.2,.4,.6,.8), na.rm=T))
+  } else if (rnd == FALSE | rnd == F) {
+    as.character(formatC(quantile(df[[variable]]), digits = 3),
+                          c(.01,.2,.4,.6,.8), na.rm=T)
+  }
+}
+
+q5 <- function(variable) {as.factor(quantile(variable, 5))}
+
+```
+
+```{r echo=FALSE, results=FALSE, message=FALSE}
+
+dat <- read.csv("C:/Users/user/Desktop/Spatial/analysis/excel/Variables_Final_ver4.csv")
+
+baseMap <- st_read("https://data.sfgov.org/api/geospatial/p5b7-5n3h?method=export&format=GeoJSON") %>%
+  st_transform(2227)
+baseMap <- baseMap[-c(37),]
+
+```
+
+
+
+
+###1. Introduction
+
+Applications like Zillow have opened the door for non-relators the participate in the real-estate industry with more information about housing values in their neighborhood or a neighborhood where they wish to live. These success of these applications hinges on their ability to accurately predict home prices using three main categories of features: 
+
+    1) Internal Characteristics: How many bathrooms does the home have? What is the home's square footage?
+    2) Amenities: Is the house near a train station or school? 
+    3) Spatial Relationships: What price are homes in the neighborhood valued at? What price are homes on the block valued at? 
+
+In this project, we developed a logistic regression algorithm using data covering these three factors to predict home values in the city of San Francisco (more disucssion of the data considered appears in Section 2). Overall, our model predicted home values 30% higher than the observed price on average. Following an in-depth discussion of the results in Sections 3, 4, and 5 we suggest some future ways to improve this model in Section 6.
+
+
+####1-1. Baseline Data
+The map below shows the distribution of home sales by price from a dataset that we recieved for our analysis. Based on the map, we can recognize that housings having high prices are clustred in the north and central area in San Francisco. The baseline data also includes internal characteristics of the homes such as the property area and number of bedrooms and bathrooms.
+
+```{r fig.height=5, fig.width=7, fig.align="left", include=TRUE}
+dat_sf <- 
+  dat %>% 
+  st_as_sf(coords = c("X", "Y"), crs = 2227, agr = "constant")
+
+ggplot() +
+  geom_sf(data=st_union(baseMap)) +
+  geom_sf(data = dat_sf, aes(colour = SalePrice), show.legend = "point", size = 1) + 
+  labs(title="Home Sale Prices") +
+  scale_colour_gradientn(colours=pal, name = "Sale Value (USD$)") +
+  mapTheme()
+
+```
+
+
+
+####1-2. Existing Housing Price by Neighborhood
+
+To get an idea of the spatial relationships that exist between home prices, we evaluated the sales prices across San Francisco's major neighborhoods. The plot and map below show the distribution of the total mean value of the median housing prices by neighborhoods. The mean home value in most neighborhoods is around one million dollar. Only one neighborhood has homes priced over 3 million dollars. 
+
+```{r fig.height=5, fig.width=7, fig.align="left"}
+dat.nhood <- dat %>%
+  group_by(nhood) %>%
+  summarise(SalePrice.median = mean(SalePrice)
+  )
+
+sf_join <- merge(x = baseMap, y = dat.nhood, by = "nhood", all.x = TRUE)
+
+hist(sf_join$SalePrice.median, 
+     main="Median Home Price by Neighborhood", 
+     xlab="SalePrice.median", 
+     border="light grey", 
+     col="orange",
+     xlim = c(000000,3500000),
+     ylim = c(0,16),
+     las=1, 
+     length(diag(4)),
+     breaks=15)
+
+```
+
+**Map of Median Home Price by Neighborhood**
+```{r fig.height=5, fig.width=7, fig.align="left"}
+tm_shape(sf_join) + 
+  tm_fill(style="quantile", col = "SalePrice.median") +
+  tm_borders(lwd=0.5) +
+  tm_legend(outside = TRUE, text.size = .8) 
+
+```
+
+
+
+###2. Data Preparation and Preliminary Tests
+
+Input data for our model, also called independent variables, were collected from the following open source data providers: San Francisco Open Data, California Open Data, and the US Census Bureau. The following data lists are the independent variables tested for our models. There are three different type of variables in our dataset: continuous variable, categorical variable and binary variable.
+
+We generated a number of independent variables using the baseline data and the data that we collected. Although the table below lists over 30 features that we considered, only 13 features were eventually deemed significant enough to be included in the final model. The following steps show how we narrowed our model down to those 13 features.  
+
+```{r results=TRUE}
+vars.list <- read.csv("C:/Users/user/Desktop/Spatial/Midterm_R/midterm-vars-list.csv")
+
+vars.list %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) 
+
+```
+
+
+
+####2-1. Summary Statistics    
+
+Based on the statistic chart, we excluded some outlier datasets, such as a property having over 400 stories, for making the better regression model.
+
+```{r results=TRUE}
+dat <- dat[!(dat$Stories==829),]
+dat <- dat[!(dat$Stories==742),]
+dat <- dat[!(dat$Stories==432),]
+
+stargazer(dat, type="text", title = "Summary Statistics")
+
+```
+
+
+
+####2-2. Evaluating Correlation
+
+**Correlation Matrix**
+
+After inspecting the summary statistics for the independent variables, we assessed their correlation with the dependent variable, the sales price. The figure below shows the degress of positive or negative correlation between all variables. Variables with a correlation closer to 1 or -1 are more likely to useful in the model.
+
+```{r fig.height=7, fig.width=10, fig.align="left"}
+datCor <- 
+  dat %>% 
+  dplyr::select(-ParcelID, -FID, -Address, -PropClassC, -SaleDate, -LandUse, -X, -Y, -long, -lat, -nhood, -holdOut, -BufferDist, -Census_Tracts, -Zoning, -BuiltYear, -Beds, -Baths)
+
+datCor.pairs <- cor(datCor, use="pairwise.complete.obs")
+corrplot(datCor.pairs, method = "shade", type="upper", order="hclust",
+         col=brewer.pal(n=10, name="RdYlBu"))
+
+```
+
+
+**Correlation Scatterplots**
+
+After assessing the correlation matrix, we made four scatter plots of interesting independent variables, such as the average household size, the closest distance from a property to tabacco retailor, the percentage of owner occupied, and the value of flood vulnerability index, to evaluate their correlation with sales prices. Based on the scatter plots, only the closest distance to a tabacco retailor has a positive correlation with the housing prices. However, the other three variables have negative correlations with the housing prices.
+
+```{r fig.height=5, fig.width=7, warning=FALSE, fig.align="left"}
+
+as.data.frame(dat) %>% 
+  dplyr::select(SalePrice, Dist_Tabaco, Val_Flood, monthly_cost.over4000, average_HH.size) %>%
+  filter(SalePrice >= 1) %>%
+  gather(Variable, Value, -SalePrice) %>% 
+   ggplot(aes(Value, SalePrice)) +
+     geom_point(colour = "#3d3d3d", size=1) +
+     geom_smooth(method = "lm", se=F, colour = "orange", size=3) +
+     facet_wrap(~Variable, ncol = 2, scales = "free") +
+     labs(title = "Sale Price as a Function of Select Continuous Variables") +
+     theme(axis.text.x = element_blank()) +
+     plotTheme()
+
+```
+
+
+**Mapping Independent Variables**
+
+The independent variables can also be mapped to assist in the evaluation. Variables that have a positive or negative spatial relationship with housing prices are more likely to be useful for modeling. 
+
+```{r fig.height=5, fig.width=7, fig.align="left"}
+
+par(mfrow=c(1,3)) 
+
+ggplot() +
+  geom_sf(data=st_union(baseMap)) +
+  geom_sf(data = dat_sf, aes(color = Dist_Tabaco), show.legend = "point", size = 1) + 
+  labs(title="Closest Distance to Tabacco Retailer", subtitle = "Source: CA State Open Data, Tabacco Retailer Locations") +
+  scale_colour_gradientn(colours=pal, name = "Distance, feet") +
+  mapTheme()
+
+ggplot() +
+  geom_sf(data=st_union(baseMap)) +
+  geom_sf(data = dat_sf, aes(color = average_HH.size), show.legend = "point", size = 1) + 
+  labs(title="Average Household Size", subtitle = "Source: 2015 ACS Tract Level Estimates") +
+  scale_colour_gradientn(colours=pal, name = "Household Size") +
+  mapTheme()
+
+ggplot() +
+  geom_sf(data=st_union(baseMap)) +
+  geom_sf(data = dat_sf, aes(colour = monthly_cost.over4000), show.legend = "point", size = 1) + 
+  labs(title="Monthly Household Costs Over $4,000", subtitle = "Source: 2015 ACS Tract Level Estimates") +
+  scale_colour_gradientn(colours=pal, name = "Count") +
+  mapTheme()
+
+```
+
+
+
+###3. Modeling Method
+
+We built our model based on the *hedonic* modeling method, which breaks the cost of a good down into the costs of its constituent parts. We have used an ordinary least squares linear regression to model the relationships between home prices and those constituent parts, or independent variables. As noted in the introduction, for housing sales those constituent parts are:
+
+    1) Internal Characteristics: How many bathrooms does the home have? What is the home's square footage?
+    2) Amenities: Is the house near a train station or school? 
+    3) Spatial Relationships: What price are homes in the neighborhood valued at? What price are homes on the block valued at? 
+
+In addition to building a model that accurately predicts home prices in San Francisco, we also aimed to build a model that could be used to predict prices in different geographies. This quality is know as *generalizability.* Several of our tests in this Section as well as Sections 4 & 5 deal with the question of generalizability. 
+
+
+####3-1. Prepare the training and testing datasets
+
+To begin, the datsets are devided into a test sets and training set. 75% of the observations are assigned to the training sets and the reamining are assigned to the test sets. We take this approach to ensure that our model is able to predict well for data that has *not* been used to train it (the remaining 25%). This will be addresses more below in *Cross Validation.*
+
+```{r results=FALSE, warning=FALSE}
+
+dat_sf <- 
+  dat %>% 
+  st_as_sf(coords = c("X", "Y"), crs = 2227, agr = "constant")
+
+coords <- st_coordinates(dat_sf) 
+neighborList <- knn2nb(knearneigh(coords, 5))
+spatialWeights <- nb2listw(neighborList, style="W")
+dat_sf$lagPrice <- lag.listw(spatialWeights, dat_sf$SalePrice)
+
+dat.noHold <- dat_sf %>%
+  filter(holdOut == 0) %>%
+    dplyr::select(SalePrice, PropArea, Cate_Zone, Cate_Year, Stories, Beds, Baths, Count_ov1m, Dist_School, Count_Tree, Count_311, Dist_Transit, Count_Theft16, Count_Fire16, Dist_Earth, Val_Flood, Dist_Tabaco, Dist_Road, median_HH.income, monthly_cost.under200, monthly_cost.over4000, average_HH.size, total_mortgage, per_vacant, per_white, per_black, per_asian, per_hispanic, per_owner.occupied, lagPrice, nhood, geometry)
+
+dat.Hold <- dat_sf %>%
+  filter(holdOut == 1) %>%
+    dplyr::select(SalePrice, PropArea, Cate_Zone, Cate_Year, Stories, Beds, Baths, Count_ov1m, Dist_School, Count_Tree, Count_311, Dist_Transit, Count_Theft16, Count_Fire16, Dist_Earth, Val_Flood, Dist_Tabaco, Dist_Road, median_HH.income, monthly_cost.under200, monthly_cost.over4000, average_HH.size, total_mortgage, per_vacant, per_white, per_black, per_asian, per_hispanic, per_owner.occupied, lagPrice, nhood, geometry)
+
+smp_siz = floor(0.75*nrow(dat.noHold))
+set.seed(123)   
+train_ind = sample(seq_len(nrow(dat.noHold)),size = smp_siz) 
+dat.train =dat.noHold[train_ind,] 
+dat.test =dat.noHold[-train_ind,]
+dat.test <- na.omit(dat.test)
+
+```
+
+####3-2 Regressions for Housing Price
+
+**Regression Model 1**
+
+In regression model 1, we included all independent variables that we prepared in the regression model with the training dataset.  The R square is 0.58, which is high. However, many of the variables that are being included in the regression are not statistically significant and should be removed. 
+
+
+```{r results=TRUE}
+reg1.train <- lm(SalePrice ~ PropArea + Cate_Zone + Cate_Year + Stories + Beds + Baths + Count_ov1m + Dist_School + Count_Tree + Count_311 + Dist_Transit + Count_Theft16 + Count_Fire16 + Dist_Earth + Val_Flood + Dist_Tabaco + Dist_Road + median_HH.income + monthly_cost.under200 + monthly_cost.over4000 + average_HH.size + total_mortgage + per_vacant + per_white + per_black + per_asian + per_hispanic + per_owner.occupied + lagPrice,
+          data = dat.train) 
+tab_model(reg1.train)
+
+```
+
+
+
+
+
+**Regression Model 2**
+
+In the model 2, we only include the significant vairables(p-values < 0.1) based on the regression model 1. We can interpret from the estimate coefficients table that:
+
+    1. A one sqaure foot increase in propoerty area (Prop Area) results in +$274.58 price on average
+    2. Census tracts with one additional household member (average HH size) have -$32,874 price on average
+    3. A one story (Stories) increase results in +$112,660 price on average
+    4. A home in a mixed-use zoning district (Cate Zone) is +$112,660 price on average
+    5. A home 1/2 mile closer to a tobacco retailer is -$60,720 in price on average (Note that units for coefficient        are feet)
+    
+Note: A full explaination of each the variables included can be found in Appendix-3
+
+```{r results=TRUE}
+reg2.train <- lm(SalePrice ~ PropArea + Cate_Zone + Cate_Year + Stories + Beds + Baths + Dist_School + Dist_Earth + Val_Flood + Dist_Tabaco + Dist_Road + average_HH.size + lagPrice,
+          data = dat.train) 
+
+tab_model(reg2.train)
+
+```
+
+
+
+####3-3. Cross Validation & Generalizability
+
+K-fold cross validation is a standard technique to detect "overfitting"" of a model. Models that are overfit do not predict well for data that is different from the data on which it was trained. For example, our model may predict well for San Francisco but not for Sacramento. It may even perform better for certain San Francisco neighborhoods and not for others. Again, this relates to the question of generalizability. For the estimating the accuracy and generalizability of our model, we performed 100-fold cross validation for our model. For the better understanding, the cross validation procedure is as follow:
+
+      1. Randomly split the data set into 100-subsets
+      2. Reserve one subset and train the model on all other subsets
+      3. Test the model on the rserved subset and record the prediction error.
+      4. Repeat this process until each of the 100 subsets has served as the test set.
+      5. Compute the average of the 100 recorded errors. This is called the cross validtion error serving as the performance metrics for the model.
+
+We found that after using 100-fold cross-validation, our model accounts for 57% of the variance (R-squared = 0.573) in price. In order to check the goodness of fit metrics the generalizability of our model, we can use the standard deviation of all the RSqaure and mean absolute error (MAE) across all folds in the table and histogram below. A model that generalizes well would have a tight distribution of MAE values.
+
+Note: More information one the cross-validation is provided in Appendix-1. 
+
+```{r results=TRUE}
+cross.val.summary <- read.csv("C:/Users/user/Desktop/Spatial/Midterm_R/cross-val-summary.csv")
+
+cross.val.summary %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  row_spec(0:1, color = "black")
+
+```
+
+```{r fig.height=5, fig.width=7, fig.align="left"}
+fitControl <- trainControl(method = "cv", number = 100)
+set.seed(123)
+
+lmFit <- train(SalePrice ~ PropArea + Cate_Zone + Cate_Year + Stories + Beds + Baths + Dist_School + Dist_Earth + Val_Flood + Dist_Tabaco + Dist_Road + average_HH.size + lagPrice,
+                 data = dat.train, 
+                 method = "lm", 
+                 trControl = fitControl,
+                 na.action = na.pass)
+lmFit
+
+ggplot(as.data.frame(lmFit$resample), aes(MAE)) + 
+  geom_histogram(bins = 20, colour="white", fill = "orange") +
+  labs(title="Distribution of MAE", subtitle = "k-fold cross validation; k = 100",
+       x="Mean Absolute Error (MAE)", y="Count") +
+  plotTheme()
+
+```
+
+
+
+
+###4. Prediction
+
+After gaining an understanding of how our model performs in cross-validation, we use the model to estimate the home prices for the entire dataset. Plotting predicted price as a function of observed price provides a good indicator of how well our model performs. Overall, the slope of our predictions seems to be too high. 
+
+
+
+#####4-1. Prediction of Training Set
+
+Based on the model 2, we can check the residuals (differences between predicted the sale prices and the actual prices) for the training datasets.
+
+```{r fig.height=5, fig.width=7, fig.align="left", warning=FALSE}
+dat.train <- dat.train %>%
+  mutate(SalePrice.Predict = predict(reg2.train, dat.train),
+         SalePrice.Error = SalePrice - SalePrice.Predict,
+         SalePrice.AbsError = abs(SalePrice - SalePrice.Predict),
+         SalePrice.APE = (abs(SalePrice - SalePrice.Predict)) / SalePrice)
+
+reg.result.train <- 
+  data.frame(Observed = dat.train$SalePrice,
+             Predicted = dat.train$SalePrice.Predict)
+
+ggplot() + 
+  geom_point(data=reg.result.train, aes(Observed, Predicted),  size = 1) +
+  stat_smooth(data=reg.result.train, aes(Observed, Observed), method = "lm", se = FALSE, size = 2, colour="Orange") + 
+  stat_smooth(data=reg.result.train, aes(Observed, Predicted), method = "lm", se = FALSE, size = 2, colour="#3C9AB3") + 
+  labs(title="Predicted Sales Prices as a function\nof Observed Sales Prices, Training Set",
+       subtitle="n= 7,072, Perfect prediction in BLUE; Actual prediction in ORANGE") +
+  theme(plot.title = element_text(size = 18,colour = "black"))
+```
+
+
+
+#####4-2. Prediction of Test Set
+
+Next, we checked the residuals for the test set, the 25% of the data that was not used to train the data. This point is important, because if we can predict well for data that was not used to train the model, then it is likely that we will be able to predict home sale values for other houses that the model has not seen yet.
+
+```{r fig.height=5, fig.width=7, fig.align="left", warning=FALSE}
+dat.test <- dat.test %>%
+  mutate(SalePrice.Predict = predict(reg2.train, dat.test),
+         SalePrice.Error = SalePrice - SalePrice.Predict,
+         SalePrice.AbsError = abs(SalePrice - SalePrice.Predict),
+         SalePrice.APE = (abs(SalePrice - SalePrice.Predict)) / SalePrice)
+
+reg.result.test <- 
+  data.frame(Observed = dat.test$SalePrice,
+             Predicted = dat.test$SalePrice.Predict)
+reg.result2.test <- 
+  data.frame(Residuals = dat.test$SalePrice.Error)
+
+ggplot() + 
+  geom_point(data=reg.result.test, aes(Observed, Predicted), size=1) +
+  stat_smooth(data=reg.result.test, aes(Observed, Observed), method = "lm", se = FALSE, size = 2, colour="Orange") + 
+  stat_smooth(data=reg.result.test, aes(Observed, Predicted), method = "lm", se = FALSE, size = 2, colour="#3C9AB3") + 
+  labs(title="Predicted Sales Prices as a Function of Observed Sales Prices, Test Set",
+       subtitle="n=2,358, Perfect prediction in BLUE; Actual prediction in ORANGE") +
+  theme(plot.title = element_text(size = 18,colour = "black"))
+```
+
+
+
+**MAE, MAPE and R-squared, Test Set**
+
+The mean absolute error (MAE), mean absolute percent error (MAPE) and R-square values of the test set are as the following chart:
+
+```{r fig3, fig.width = 5, fig.asp = .62, warning=FALSE}
+reg2.test <- lm(SalePrice ~ PropArea + Cate_Zone + Cate_Year + Stories + Beds + Baths + Dist_School + Dist_Earth + Val_Flood + Dist_Tabaco + Dist_Road + average_HH.size + lagPrice,
+          data = dat.test) 
+reg.result3.test <- 
+  data.frame(MAE = mean(dat.test$SalePrice),
+             MAPE = mean(dat.test$SalePrice.APE))
+
+reg.result3.test <- reg.result3.test %>% 
+  mutate(R2 = 0.618)
+
+reg.result3.test %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  row_spec(0:1, color = "black")
+
+```
+
+```{r results=FALSE, warning=FALSE}
+dat.test <- na.omit(dat.test)
+
+dat.test.sf <- 
+  dat.test %>% 
+  st_as_sf(coords = c("X", "Y"), crs = 2227, agr = "constant")
+coords.test <- st_coordinates(dat.test.sf)
+neighborList.test <- knn2nb(knearneigh(coords.test, 5))
+spatialWeights.test <- nb2listw(neighborList.test, style="W")
+
+dat.test$lagPriceError <- lag.listw(spatialWeights.test, dat.test$SalePrice.Error) 
+
+moranTest <- moran.mc(dat.test$SalePrice.Error, 
+                      spatialWeights.test, nsim = 999)
+```
+
+
+
+**Map of Residuals for the Test Set**
+
+```{r fig.height=5, fig.width=7, fig.align="left"}
+ggplot() +
+  geom_sf(data=st_union(baseMap)) +
+  geom_sf(data = dat.test.sf, aes(colour = SalePrice.Error), show.legend = "point", size = 1) + 
+  labs(title="Residuals for the Test Set", subtitle = "Total 2,357") +
+  scale_colour_gradientn(colours=pal, name = "USD$") +
+  mapTheme()
+
+```
+
+
+
+**Map of the Predicted Sale Prices for the Entire Dataset**
+
+We can map the predicted housing price of all datasets as the below figure. 
+
+```{r fig.height=5, fig.width=7, fig.align="left"}
+dat_sf <- dat_sf %>%
+  mutate(SalePrice.Predict = predict(reg2.train, dat_sf),
+         SalePrice.Error = SalePrice - SalePrice.Predict,
+         SalePrice.AbsError = abs(SalePrice - SalePrice.Predict),
+         SalePrice.APE = (abs(SalePrice - SalePrice.Predict)) / SalePrice)
+
+dat.sf <- 
+  dat %>% 
+  st_as_sf(coords = c("X", "Y"), crs = 2227, agr = "constant")
+
+ggplot() +
+  geom_sf(data=st_union(baseMap)) +
+  geom_sf(data = dat_sf, aes(colour = SalePrice.Predict), show.legend = "point", size = 1) + 
+  labs(title="Predicted Sale Prices for the Entire Dataset", subtitle = "Total 10,130") +
+  scale_colour_gradientn(colours=pal, name = "USD$", labels=qBr(dat_sf,"SalePrice")) +
+  mapTheme()
+
+```
+
+
+
+
+###5. Analysis by Neighborhood
+
+Another approach for testing generalizability is to measure how well the model performs across distinct parts of your geography. Here, we have decided to estimate how well the model performs in San Francisco's majority white neighborhoods vs. majority non-white neighborhoods. To begin this analysis, we first mapped and plotted the MAPE by neighborhood to see what types of spatial variation existis in our predictions. We found that our model predicts somewhat better for neighborhoods with higher predicted home values, by the difference in error across neighborhoods is not significant enough to show a strong bias towards one type of neighborhood over another.
+
+
+
+**MAPE by Neighborhood**
+
+```{r fig.height=5, fig.width=7, fig.align="left"}
+dat.test.nhood <- dat.test %>% 
+  group_by(nhood) %>% 
+  summarize(mean.APE = mean(SalePrice.APE, na.rm = T),
+            mean.SalePrice = mean(SalePrice.Predict, na.rm = T))
+dat.test.nhood1 <- st_set_geometry(dat.test.nhood, NULL)
+
+dat.test.nhood_join <- merge(x = baseMap, y = dat.test.nhood1, by = "nhood", all.x = TRUE)
+
+tm_shape(dat.test.nhood_join) + 
+  tm_fill(style="quantile", col = "mean.APE") +
+  tm_borders(lwd=0.5) +
+  tm_legend(outside = TRUE, text.size = .8)
+
+```
+
+
+
+**MAPE by neighborhood as a Function of Mean Price by Neighborhood**
+
+```{r warning=FALSE}
+dat.test.nhood_join %>% 
+ggplot(aes(mean.SalePrice, mean.APE)) +
+    geom_point(colour = "black") +
+    geom_smooth(method = "lm", se = FALSE, size = 2, colour="orange") +
+    labs(title = "MAPE by neighborhood as a Function of Mean Price by Neighborhood",
+         x = "Mean of Predicted Sale Price",
+         y = "MAPE") +
+    plotTheme()
+
+```
+
+
+
+**Race Context of Predictions**
+
+In addition to evaluating our predictions by neighborhood, we also split the city into majority white and majority non-white sections by 2016 ACS census tracts. We found that our MAE does not differ significantly between the majority white and majority non-white sections of the city. This is a good sign that our model is generalizable. 
+
+```{r results=FALSE, message=FALSE, warning=FALSE, Fig.height=5, fig.width=7, fig.align="left"}
+tracts16 <- 
+get_acs(geography = "tract", variables = c("B01001_001E","B01001A_001E"), 
+        year = 2016, state=06, county=075, geometry=T) %>%
+st_transform(2227)  %>%
+dplyr::select(variable, estimate, GEOID) %>%
+spread(variable, estimate) %>%
+rename(TotalPop = B01001_001,
+       NumberWhites = B01001A_001) %>%
+mutate(percentWhite = NumberWhites / TotalPop,
+       raceContext = ifelse(percentWhite > .5, "Majority White", "Majority Non-White"))
+
+ggplot() + 
+    geom_sf(data = na.omit(tracts16), aes(fill = raceContext)) +
+    scale_fill_manual(values = c("#3C9AB3", "orange"),
+                      name="Race Context") +
+    labs(title = "Race Context") +
+    mapTheme() + theme(legend.position="bottom")
+```
+
+```{r results=TRUE}
+TestRegressions <- 
+    dplyr::select(dat.test, c(starts_with("SalePrice."), SalePrice, lagPrice, nhood)) %>% 
+      na.omit() %>%
+      mutate(lagPriceError = lag.listw(spatialWeights.test, SalePrice.Error))
+
+  st_join(TestRegressions, tracts16) %>% 
+  na.omit() %>% 
+  group_by(raceContext) %>%
+  summarize(mean.MAPE = mean(SalePrice.APE, na.rm = T)) %>%
+  st_set_geometry(NULL) %>% 
+  spread(raceContext, mean.MAPE) %>%
+  kable(caption = "Mean Absolute Percent Error (MAPE) of test set sales by neighborhood racial context") %>%
+    kable_styling("striped", full_width = F) %>%
+    row_spec(0:1, color = "black")
+
+
+```
+
+
+
+###6. Conclusion
+
+Overall, our model has some promising indicators, but more predictive power would be required for out model to be useful in most contexts. This is apparent in the high MAE ($1.1 million) and MAPE (31.5%) in the test set predictions. The highest and lowest sale prices were the most difficult for our model to predict with good accuracy, so neighborhoods that have the highest value homes on average or the lowest value homes on average recieved the predictions with the highest rates of MAE. Despite
+
+It was interesting to note that some variables such as distance to tobacco retailers and average household size were statistically significant, because at first glance those factors seem as though they would be unrelated to home value. Nonetheless, homes nearer to tobacco retailers and home in areas where household sizes are larger tend to have a lower sale price. Throughout testing, however, we found that the spatial lag had the most significant impact on the model's accuracy (See Appendix-2, Moran's I for Test Set). Without spatial lag, our model barely reached an R-squared of 40%. With spatial lage, the R-squared increased by over 20 points. The plot below shows how this discrepancy would play out on the predicted sale price as a function of the observed sale price. In the future, it would be beneficial to test different variations of this spatial relationship further. We found that using the mean of the five nearest neighbors was effective, but there are many more possibilities that could be tested. 
+
+```{r fig.height=5, fig.width=10, fig.align="left"}
+reg1.garbage <- lm(SalePrice ~ PropArea + Cate_Zone + Cate_Year + Stories + Beds + Baths + Count_ov1m + Dist_School + Count_Tree + Count_311 + Dist_Transit + Count_Theft16 + Count_Fire16 + Dist_Earth + Val_Flood + Dist_Tabaco + Dist_Road + median_HH.income + monthly_cost.under200 + monthly_cost.over4000 + average_HH.size + total_mortgage + per_vacant + per_white + per_black + per_asian + per_hispanic + per_owner.occupied,
+          data = dat.train) 
+
+dat.test.dummy <- dat.test %>%
+  mutate(SalePrice.Predict = predict(reg1.garbage, dat.test),
+         SalePrice.Error = SalePrice - SalePrice.Predict,
+         SalePrice.AbsError = abs(SalePrice - SalePrice.Predict),
+         SalePrice.APE = (abs(SalePrice - SalePrice.Predict)) / SalePrice,
+         Regression = "NO Spatial Lag")
+
+dat.test <- dat.test %>%
+  mutate(Regression = "Spatial Lag")
+
+bothRegressions <- 
+  rbind(
+    dplyr::select(dat.test, c(starts_with("SalePrice."), 
+                               Regression, SalePrice)) %>% 
+      mutate(lagPriceError = lag.listw(spatialWeights.test, SalePrice.Error)),
+    dplyr::select(dat.test.dummy, c(starts_with("SalePrice."), 
+                                     Regression, SalePrice)) %>% 
+      mutate(lagPriceError = lag.listw(spatialWeights.test, SalePrice.Error)))
+
+bothRegressions %>%
+  dplyr::select(SalePrice.Predict, SalePrice, Regression) %>%
+    ggplot(aes(SalePrice, SalePrice.Predict)) +
+  geom_point() +
+  stat_smooth(aes(SalePrice, SalePrice), 
+             method = "lm", se = FALSE, size = 2, colour="orange") + 
+  stat_smooth(aes(SalePrice, SalePrice.Predict), 
+              method = "lm", se = FALSE, size = 2, colour="#3C9AB3") +
+  facet_wrap(~Regression) +
+  labs(title="Predicted sale price as a function of observed price: Spatial Lag Factor",
+       subtitle="BLUE line represents a perfect prediction; ORANGE line represents prediction") +
+  theme(plot.title = element_text(size = 18,colour = "black"))
+
+```
+
+
+
+### APPENDIX
+
+#### A-1. 100-Folds Cross Validation
+
+```{r results=TRUE}
+fitControl <- trainControl(method = "cv", number = 100)
+set.seed(123)
+
+lmFit <- train(SalePrice ~ PropArea + Cate_Zone + Cate_Year + Stories + Beds + Baths + Dist_School + Dist_Earth + Val_Flood + Dist_Tabaco + Dist_Road + average_HH.size + lagPrice,
+                 data = dat.train, 
+                 method = "lm", 
+                 trControl = fitControl,
+                 na.action = na.pass)
+head(lmFit, 10)
+
+```
+
+
+**Results of Training Set Model**
+
+```{r results=TRUE}
+lmFit$resample %>%
+    kable() %>%
+    kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+    row_spec(0:1, color = "black")
+```
+
+
+**Mean of MAE in Cross Validation**
+
+```{r results=TRUE}
+mean(lmFit$resample[,3])
+```
+
+
+**Standard Deviation of MAE in the 100-fold Cross Validation**
+
+```{r results=TRUE}
+sd(lmFit$resample[,3])
+```
+
+
+**Standard Deviation around the R-squared Value in the 100-fold Cross-Validation**
+
+```{r results=TRUE}
+sd(lmFit$resample$Rsquared)
+```
+
+The standard deviation around the R-squared value of the 100-fold cross-validation is 0.11, which is a relatively large window for a R-squared value.
+
+
+
+####A-2. Moran's I for the Test Set
+
+Moran's I is a measure that indicates whether spatial data are clustered, dispersed, or random. We used Moran's I to check how our error is dispersed compaired to the actual dataset. The plot below shows that our error values are slightly more clustered than the actual values.
+
+```{r fig.height=5, fig.width=7, fig.align="left", warning=FALSE}
+dat.test <- na.omit(dat.test)
+
+dat.test.sf <- 
+  dat.test %>% 
+  st_as_sf(coords = c("X", "Y"), crs = 2227, agr = "constant")
+coords.test <- st_coordinates(dat.test.sf)
+neighborList.test <- knn2nb(knearneigh(coords.test, 5))
+spatialWeights.test <- nb2listw(neighborList.test, style="W")
+
+dat.test$lagPriceError <- lag.listw(spatialWeights.test, dat.test$SalePrice.Error) # Check
+
+moranTest <- moran.mc(dat.test$SalePrice.Error, 
+                      spatialWeights.test, nsim = 999)
+
+ggplot(as.data.frame(moranTest$res[c(1:999)]), aes(moranTest$res[c(1:999)])) +
+  geom_histogram(binwidth = 0.01) +
+  geom_vline(aes(xintercept = moranTest$statistic), colour = "orange", size=2) +
+  scale_x_continuous(limits = c(-0.5, 0.5)) +
+  labs(title="Observed and permuted Moran's I for the Test Set",
+       subtitle= "Observed Moran's I in Orange",
+       x="Moran's I",
+       y="Count") +
+  plotTheme()
+```
+
+
+
+####A-3. Final Regression Variables
+
+**Prop Area**: Property Area, units = square feet
+
+**Cate Zone**: Zoning (mixed use), binary
+
+**Cate Year**: Year Built, Before 1920, 1920-1960, 1960-Present
+
+**Stories**: Number of Stories
+
+**Beds**: Number of Beds
+
+**Baths**: Number of Baths
+
+**Dist School**: Distance to School, units = feet
+
+**Val Flood**: Flood Health Vulnerability Index, see https://data.sfgov.org/Health-and-Social-Services/San-Francisco-Flood-Health-Vulnerability/cne3-h93g for more information
+
+**Dist Tobacco**: Distance to Tobacco Retailer, units = feet
+
+**Dist Road**: Distance to Road, units = 
+
+**average HH size**: Average Household Size, 2015 ACS tract mean
+
+**lag Price**: Mean price of 5 nearest neighbors, units = dollars
+
+
+
+####A-4. Definitions
+
+**MAE**: Mean Absolute Error. Mean absolute difference between predicted and observed values.
+
+**MAPE**: Mean Absolute Percent Error. Absolute error visualized as a percentage. 
+
+**R-squared (R2)**:
+
+**P-value**: A measure of statistical significance. Ideally, the value would be <0.001
+
+**Moran's I**: A measure that indicates whether spatial data are clustered, dispersed, or random. Values range from -1 to 1, where 0 indicates random, -1 indicates dispersed, and 1 indicates clustered.
+
+
