@@ -1,2 +1,3 @@
 # DataScience_WorkSample2
-Project 2
+"Hedonic Home Price Prediction in San Francisco"
+Work Sample by R
